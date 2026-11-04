@@ -1,0 +1,15 @@
+node_modules
+# Keep environment variables out of version control
+.env
+.env.local
+.env.example
+# Ignore build output
+/dist
+# Ignore generated Prisma client
+/src/generated/prisma
+
+# Ignore generated Zod schemas
+/src/generated/zod
+
+# Ignore generated OpenAPI schemas
+/src/generated/openapi
