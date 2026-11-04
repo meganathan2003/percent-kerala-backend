@@ -241,6 +241,7 @@ model Quotation {
 
   property Property  @relation(fields: [propertyId], references: [id])
   payments Payment[]
+  campaign Campaign?
 
   @@index([propertyId])
   @@index([status])
@@ -264,4 +265,46 @@ model PaymentConfiguration {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("payment_configurations")
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  LIVE
+  PAUSED
+  COMPLETED
+}
+
+model Campaign {
+  id              String         @id @default(uuid()) @db.Uuid
+  quotationId     String         @unique @map("quotation_id") @db.Uuid
+  campaignName    String         @map("campaign_name")
+  platform        String
+  objective       String?
+  targetAudience  String?        @map("target_audience")
+  startDate       DateTime       @map("start_date")
+  endDate         DateTime       @map("end_date")
+  status          CampaignStatus @default(DRAFT)
+  notes           String?
+  rejectionReason String?        @map("rejection_reason")
+
+  createdById  String    @map("created_by_id") @db.Uuid
+  submittedAt  DateTime? @map("submitted_at")
+  approvedById String?   @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime? @map("approved_at")
+  launchedById String?   @map("launched_by_id") @db.Uuid
+  launchedAt   DateTime? @map("launched_at")
+
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  rejectedById String?   @map("rejected_by_id") @db.Uuid
+  rejectedAt   DateTime? @map("rejected_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("campaigns")
 }
