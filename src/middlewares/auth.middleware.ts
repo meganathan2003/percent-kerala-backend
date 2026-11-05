@@ -32,7 +32,6 @@ export async function authenticate(
     next: NextFunction
 ) {
     try {
-        // Read JWT from HttpOnly cookie
         const token = req.cookies?.accessToken;
 
         if (!token || typeof token !== "string") {
@@ -42,17 +41,14 @@ export async function authenticate(
             });
         }
 
-        // Verify JWT signature
-        const decoded = jwt.verify(
-            token,
-            getJwtSecret()
-        );
+        const decoded = jwt.verify(token, getJwtSecret());
 
         if (
             typeof decoded === "string" ||
             decoded.type !== "access" ||
             typeof decoded.sub !== "string" ||
-            typeof decoded.tokenVersion !== "number"
+            typeof decoded.tokenVersion !== "number" ||
+            typeof decoded.role !== "string"
         ) {
             return res.status(401).json({
                 success: false,
@@ -60,7 +56,6 @@ export async function authenticate(
             });
         }
 
-        // Find admin user in database
         const user = await prisma.adminUser.findUnique({
             where: {
                 id: decoded.sub,
@@ -80,7 +75,6 @@ export async function authenticate(
             });
         }
 
-        // Verify token version
         if (decoded.tokenVersion !== user.tokenVersion) {
             return res.status(401).json({
                 success: false,
@@ -88,7 +82,13 @@ export async function authenticate(
             });
         }
 
-        // Attach authenticated user to request
+        if (decoded.role !== user.role) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid user role in token",
+            });
+        }
+
         req.user = {
             id: user.id,
             role: user.role,
@@ -97,7 +97,6 @@ export async function authenticate(
         return next();
 
     } catch (error) {
-
         if (error instanceof jwt.JsonWebTokenError) {
             return res.status(401).json({
                 success: false,
@@ -105,7 +104,8 @@ export async function authenticate(
             });
         }
 
-        if (error instanceof Error &&
+        if (
+            error instanceof Error &&
             error.message === "JWT_ACCESS_SECRET is not configured"
         ) {
             console.error("JWT CONFIGURATION ERROR:", error.message);

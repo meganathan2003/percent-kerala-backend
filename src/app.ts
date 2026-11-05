@@ -1,6 +1,7 @@
 
 import express, { Request } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 
 import authRoutes from "./modules/auth/auth.routes";
 import adminRoutes from "./modules/admins/admin.routes";
@@ -11,22 +12,29 @@ import paymentConfigurationRoutes from "./modules/payment-configurations/payment
 import campaignRoutes from "./modules/campaigns/campaign.routes";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes";
 import documentRoutes from "./modules/documents/document.routes";
-import cookieParser from "cookie-parser";
 
 const app = express();
 
+const allowedOrigins = [
+    "http://localhost:3000",
+    process.env.FRONTEND_URL,
+];
 
 app.use(
     cors({
-        origin: process.env.FRONTEND_URL,
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            return callback(new Error(`CORS blocked: ${origin}`));
+        },
         credentials: true,
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
     })
 );
-// Global middlewares
-app.use(cors({
-    origin: [process.env.FRONTEND_URL as string, "http://localhost:3000"],
-    credentials: true,
-}));
+
 app.use(cookieParser());
 
 app.use(
@@ -43,8 +51,6 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admins", adminRoutes);
 app.use("/api/v1/properties", propertyRoutes);
 app.use("/api/v1/quotations", quotationRoutes);
-
-// Payment routes - mount only once
 app.use("/api/v1/payments", paymentRoutes);
 
 app.use(

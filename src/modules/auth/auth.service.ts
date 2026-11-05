@@ -6,15 +6,8 @@ import { randomUUID } from "crypto";
 import { prisma } from "../../config/database";
 import { AdminRole } from "../../generated/prisma/client";
 
-const JWT_SECRET = process.env.JWT_ACCESS_SECRET;
-
 const TOKEN_EXPIRY = "15m";
 const COOKIE_MAX_AGE = 15 * 60 * 1000;
-
-if (!JWT_SECRET) {
-    throw new Error("JWT_ACCESS_SECRET is not configured");
-}
-
 
 function getJwtSecret(): string {
     const secret = process.env.JWT_ACCESS_SECRET;
@@ -25,6 +18,17 @@ function getJwtSecret(): string {
 
     return secret;
 }
+
+export const getCookieOptions = () => ({
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production"
+        ? "none" as const
+        : "lax" as const,
+    maxAge: COOKIE_MAX_AGE,
+    path: "/",
+});
+
 function generateToken(user: {
     id: string;
     role: AdminRole;
@@ -44,7 +48,6 @@ function generateToken(user: {
         }
     );
 }
-
 
 export async function login(email: string, password: string) {
     const user = await prisma.adminUser.findUnique({
@@ -77,12 +80,32 @@ export async function login(email: string, password: string) {
         },
         token,
         expiresIn: TOKEN_EXPIRY,
-        cookieOptions: {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "none" as const,
-            maxAge: COOKIE_MAX_AGE,
-            path: "/",
+        cookieOptions: getCookieOptions(),
+    };
+}
+
+export async function getCurrentAdmin(userId: string) {
+    const user = await prisma.adminUser.findUnique({
+        where: {
+            id: userId,
         },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isActive: true,
+        },
+    });
+
+    if (!user || !user.isActive) {
+        throw new Error("ADMIN_NOT_FOUND");
+    }
+
+    return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
     };
 }

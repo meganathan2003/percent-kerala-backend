@@ -18,7 +18,6 @@ export async function login(req: Request, res: Response) {
             data.password
         );
 
-        // Store JWT in an HttpOnly cookie
         res.cookie(
             "accessToken",
             result.token,
@@ -33,7 +32,6 @@ export async function login(req: Request, res: Response) {
                 expiresIn: result.expiresIn,
             },
         });
-
     } catch (error) {
         if (error instanceof z.ZodError) {
             return res.status(400).json({
@@ -60,4 +58,46 @@ export async function login(req: Request, res: Response) {
             message: "Internal server error",
         });
     }
+}
+
+export async function me(req: Request, res: Response) {
+    try {
+        if (!req.user?.id) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication required",
+            });
+        }
+
+        const user = await authService.getCurrentAdmin(req.user.id);
+
+        return res.status(200).json({
+            success: true,
+            message: "Admin session verified",
+            data: { user },
+        });
+    } catch (error) {
+        console.error("GET CURRENT ADMIN ERROR:", error);
+
+        return res.status(401).json({
+            success: false,
+            message: "Invalid or expired session",
+        });
+    }
+}
+
+export async function logout(req: Request, res: Response) {
+    res.clearCookie("accessToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production"
+            ? "none"
+            : "lax",
+        path: "/",
+    });
+
+    return res.status(200).json({
+        success: true,
+        message: "Logout successful",
+    });
 }
