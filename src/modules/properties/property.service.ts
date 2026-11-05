@@ -1,3 +1,4 @@
+
 import { prisma } from "../../config/database";
 import {
     VerificationStatus,
@@ -6,6 +7,28 @@ import {
 } from "../../generated/prisma/client";
 
 
+interface UpdatePropertyInput {
+    owner?: {
+        name?: string;
+        email?: string | null;
+        phone?: string;
+    };
+
+    property?: {
+        title?: string;
+        description?: string | null;
+        category?: PropertyCategory;
+        address?: string;
+        city?: string;
+        district?: string;
+        pincode?: string | null;
+        latitude?: number | null;
+        longitude?: number | null;
+        price?: number;
+        area?: number;
+        areaUnit?: string;
+    };
+}
 interface CreatePropertyInput {
     owner: {
         name: string;
@@ -26,6 +49,31 @@ interface CreatePropertyInput {
         area: number;
         areaUnit?: string;
     };
+}
+
+interface VerifyPropertyInput {
+    propertyId: string;
+    adminId: string;
+    status: VerificationStatus;
+    remarks?: string;
+    identityVerified?: boolean;
+    ownershipVerified?: boolean;
+    locationVerified?: boolean;
+    photosVerified?: boolean;
+    siteVisitCompleted?: boolean;
+}
+
+/**
+ * Validate property ID before sending it to Prisma.
+ * This prevents invalid values such as "undefined" from reaching PostgreSQL.
+ */
+function validatePropertyId(propertyId: string) {
+    const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (!propertyId || !uuidRegex.test(propertyId)) {
+        throw new Error("INVALID_PROPERTY_ID");
+    }
 }
 
 export async function createProperty(data: CreatePropertyInput) {
@@ -74,6 +122,9 @@ export async function createProperty(data: CreatePropertyInput) {
 
 export async function getAllProperties() {
     return prisma.property.findMany({
+        where: {
+            isDeleted: false,
+        },
         include: {
             owner: true,
             verification: true,
@@ -85,22 +136,43 @@ export async function getAllProperties() {
     });
 }
 
-interface VerifyPropertyInput {
-    propertyId: string;
-    adminId: string;
-    status: VerificationStatus;
-    remarks?: string;
-    identityVerified?: boolean;
-    ownershipVerified?: boolean;
-    locationVerified?: boolean;
-    photosVerified?: boolean;
-    siteVisitCompleted?: boolean;
-}
 
+export async function getPropertyById(propertyId: string) {
+    validatePropertyId(propertyId);
+
+    const property = await prisma.property.findFirst({
+        where: {
+            id: propertyId,
+            isDeleted: false,
+        },
+        include: {
+            owner: true,
+            documents: true,
+            verification: {
+                include: {
+                    history: true,
+                },
+            },
+            quotations: true,
+        },
+    });
+
+    if (!property) {
+        throw new Error("PROPERTY_NOT_FOUND");
+    }
+
+    return property;
+}
 export async function verifyProperty(data: VerifyPropertyInput) {
+    validatePropertyId(data.propertyId);
+
     const property = await prisma.property.findUnique({
-        where: { id: data.propertyId },
-        include: { verification: true },
+        where: {
+            id: data.propertyId,
+        },
+        include: {
+            verification: true,
+        },
     });
 
     if (!property) {
@@ -109,6 +181,10 @@ export async function verifyProperty(data: VerifyPropertyInput) {
 
     if (!property.verification) {
         throw new Error("VERIFICATION_NOT_FOUND");
+    }
+
+    if (property.verification.status === "VERIFIED") {
+        throw new Error("PROPERTY_ALREADY_VERIFIED");
     }
 
     if (data.status === "VERIFIED") {
@@ -146,7 +222,9 @@ export async function verifyProperty(data: VerifyPropertyInput) {
         const oldStatus = property.verification!.status;
 
         const verification = await tx.propertyVerification.update({
-            where: { propertyId: data.propertyId },
+            where: {
+                propertyId: data.propertyId,
+            },
             data: {
                 status: data.status,
                 identityVerified: data.identityVerified,
@@ -155,11 +233,17 @@ export async function verifyProperty(data: VerifyPropertyInput) {
                 photosVerified: data.photosVerified,
                 siteVisitCompleted: data.siteVisitCompleted,
                 rejectionReason:
-                    data.status === "REJECTED" ? data.remarks : null,
+                    data.status === "REJECTED"
+                        ? data.remarks
+                        : null,
                 verifiedById:
-                    data.status === "VERIFIED" ? data.adminId : null,
+                    data.status === "VERIFIED"
+                        ? data.adminId
+                        : null,
                 verifiedAt:
-                    data.status === "VERIFIED" ? new Date() : null,
+                    data.status === "VERIFIED"
+                        ? new Date()
+                        : null,
             },
         });
 
@@ -174,7 +258,9 @@ export async function verifyProperty(data: VerifyPropertyInput) {
         });
 
         await tx.property.update({
-            where: { id: data.propertyId },
+            where: {
+                id: data.propertyId,
+            },
             data: {
                 status:
                     data.status === "VERIFIED"
@@ -188,3 +274,103 @@ export async function verifyProperty(data: VerifyPropertyInput) {
         return verification;
     });
 }
+
+
+export async function updateProperty(
+    propertyId: string,
+    data: UpdatePropertyInput
+) {
+    validatePropertyId(propertyId);
+
+    return prisma.$transaction(async (tx) => {
+        const existingProperty = await tx.property.findFirst({
+            where: {
+                id: propertyId,
+                isDeleted: false,
+            },
+        });
+
+        if (!existingProperty) {
+            throw new Error("PROPERTY_NOT_FOUND");
+        }
+
+        // Update owner details
+        if (data.owner) {
+            await tx.owner.update({
+                where: {
+                    id: existingProperty.ownerId,
+                },
+                data: data.owner,
+            });
+        }
+
+        // Update property details
+        if (data.property) {
+            await tx.property.update({
+                where: {
+                    id: propertyId,
+                },
+                data: data.property,
+            });
+        }
+
+        return tx.property.findUnique({
+            where: {
+                id: propertyId,
+            },
+            include: {
+                owner: true,
+                documents: true,
+                verification: {
+                    include: {
+                        history: true,
+                    },
+                },
+                quotations: true,
+            },
+        });
+    });
+}
+
+export async function softDeleteProperty(propertyId: string) {
+    validatePropertyId(propertyId);
+
+    const result = await prisma.property.updateMany({
+        where: {
+            id: propertyId,
+            isDeleted: false,
+        },
+        data: {
+            isDeleted: true,
+            deletedAt: new Date(),
+        },
+    });
+
+    if (result.count === 0) {
+        throw new Error("PROPERTY_NOT_FOUND");
+    }
+
+    return { id: propertyId, isDeleted: true };
+}
+
+export async function restoreProperty(propertyId: string) {
+    validatePropertyId(propertyId);
+
+    const result = await prisma.property.updateMany({
+        where: {
+            id: propertyId,
+            isDeleted: true,
+        },
+        data: {
+            isDeleted: false,
+            deletedAt: null,
+        },
+    });
+
+    if (result.count === 0) {
+        throw new Error("DELETED_PROPERTY_NOT_FOUND");
+    }
+
+    return { id: propertyId, isDeleted: false };
+}
+

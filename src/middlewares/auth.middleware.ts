@@ -1,5 +1,7 @@
+
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+
 import { AdminRole } from "../generated/prisma/client";
 import { prisma } from "../config/database";
 
@@ -14,32 +16,43 @@ declare global {
     }
 }
 
+function getJwtSecret(): string {
+    const secret = process.env.JWT_ACCESS_SECRET;
+
+    if (!secret) {
+        throw new Error("JWT_ACCESS_SECRET is not configured");
+    }
+
+    return secret;
+}
+
 export async function authenticate(
     req: Request,
     res: Response,
     next: NextFunction
 ) {
     try {
-        const authHeader = req.headers.authorization;
+        // Read JWT from HttpOnly cookie
+        const token = req.cookies?.accessToken;
 
-        if (!authHeader?.startsWith("Bearer ")) {
+        if (!token || typeof token !== "string") {
             return res.status(401).json({
                 success: false,
                 message: "Access token required",
             });
         }
 
-        const token = authHeader.split(" ")[1];
-
+        // Verify JWT signature
         const decoded = jwt.verify(
             token,
-            process.env.JWT_ACCESS_SECRET!
+            getJwtSecret()
         );
 
         if (
             typeof decoded === "string" ||
             decoded.type !== "access" ||
-            typeof decoded.sub !== "string"
+            typeof decoded.sub !== "string" ||
+            typeof decoded.tokenVersion !== "number"
         ) {
             return res.status(401).json({
                 success: false,
@@ -47,8 +60,11 @@ export async function authenticate(
             });
         }
 
+        // Find admin user in database
         const user = await prisma.adminUser.findUnique({
-            where: { id: decoded.sub },
+            where: {
+                id: decoded.sub,
+            },
             select: {
                 id: true,
                 role: true,
@@ -64,6 +80,7 @@ export async function authenticate(
             });
         }
 
+        // Verify token version
         if (decoded.tokenVersion !== user.tokenVersion) {
             return res.status(401).json({
                 success: false,
@@ -71,18 +88,31 @@ export async function authenticate(
             });
         }
 
+        // Attach authenticated user to request
         req.user = {
             id: user.id,
             role: user.role,
         };
 
-        next();
+        return next();
 
     } catch (error) {
+
         if (error instanceof jwt.JsonWebTokenError) {
             return res.status(401).json({
                 success: false,
                 message: "Invalid or expired access token",
+            });
+        }
+
+        if (error instanceof Error &&
+            error.message === "JWT_ACCESS_SECRET is not configured"
+        ) {
+            console.error("JWT CONFIGURATION ERROR:", error.message);
+
+            return res.status(500).json({
+                success: false,
+                message: "Authentication configuration error",
             });
         }
 
@@ -96,7 +126,11 @@ export async function authenticate(
 }
 
 export function authorize(...allowedRoles: AdminRole[]) {
-    return (req: Request, res: Response, next: NextFunction) => {
+    return (
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ) => {
         if (!req.user) {
             return res.status(401).json({
                 success: false,
@@ -111,6 +145,6 @@ export function authorize(...allowedRoles: AdminRole[]) {
             });
         }
 
-        next();
+        return next();
     };
 }

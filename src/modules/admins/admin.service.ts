@@ -73,6 +73,7 @@ export async function updateAdmin(
     id: string,
     data: {
         name?: string;
+        email?: string;
         role?: AdminRole;
     }
 ) {
@@ -96,9 +97,29 @@ export async function updateAdmin(
         throw new Error("INVALID_ROLE");
     }
 
+
+
+    // Normalize email
+    const email = data.email?.toLowerCase();
+
+    // Check whether another admin already uses this email
+    if (email) {
+        const existingAdmin = await prisma.adminUser.findUnique({
+            where: { email },
+        });
+
+        if (existingAdmin && existingAdmin.id !== id) {
+            throw new Error("EMAIL_ALREADY_EXISTS");
+        }
+    }
+
     return prisma.adminUser.update({
         where: { id },
-        data,
+        data: {
+            ...(data.name !== undefined && { name: data.name }),
+            ...(email !== undefined && { email }),
+            ...(data.role !== undefined && { role: data.role }),
+        },
         select: {
             id: true,
             name: true,
@@ -109,7 +130,6 @@ export async function updateAdmin(
         },
     });
 }
-
 
 export async function updateAdminStatus(
     id: string,

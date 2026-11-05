@@ -1,3 +1,4 @@
+
 import { Request, Response } from "express";
 import { z } from "zod";
 
@@ -17,10 +18,20 @@ export async function login(req: Request, res: Response) {
             data.password
         );
 
+        // Store JWT in an HttpOnly cookie
+        res.cookie(
+            "accessToken",
+            result.token,
+            result.cookieOptions
+        );
+
         return res.status(200).json({
             success: true,
             message: "Login successful",
-            data: result,
+            data: {
+                user: result.user,
+                expiresIn: result.expiresIn,
+            },
         });
 
     } catch (error) {

@@ -75,7 +75,11 @@ export async function getAllAdmins(req: Request, res: Response) {
 
 const updateAdminSchema = z.object({
     name: z.string().trim().min(2).max(100).optional(),
-    role: z.enum([AdminRole.SALES, AdminRole.OPERATIONS]).optional(),
+    email: z.string().trim().email().optional(),
+    role: z.enum([
+        AdminRole.SALES,
+        AdminRole.OPERATIONS
+    ]).optional(),
 }).refine(
     (data) => Object.keys(data).length > 0,
     { message: "At least one field is required" }
@@ -90,6 +94,7 @@ export async function updateAdmin(req: Request, res: Response) {
             data
         );
 
+
         return res.status(200).json({
             success: true,
             message: "Admin updated successfully",
@@ -98,6 +103,16 @@ export async function updateAdmin(req: Request, res: Response) {
 
     } catch (error) {
         if (error instanceof z.ZodError) {
+
+            if (
+                error instanceof Error &&
+                error.message === "EMAIL_ALREADY_EXISTS"
+            ) {
+                return res.status(409).json({
+                    success: false,
+                    message: "Email already exists",
+                });
+            }
             return res.status(400).json({
                 success: false,
                 message: "Invalid input",

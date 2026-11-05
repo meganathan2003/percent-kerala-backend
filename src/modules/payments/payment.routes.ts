@@ -7,6 +7,9 @@ import {
     getAllPayments,
     getPaymentById,
 } from "./payment.controller";
+import {
+    createPaymentController as createRazorpayLinkController,
+} from "../payment/payment.controller";
 
 import {
     authenticate,
@@ -14,6 +17,7 @@ import {
 } from "../../middlewares/auth.middleware";
 
 import { AdminRole } from "../../generated/prisma/client";
+import { handleRazorpayWebhook } from "../payment/payment.webhook";
 
 const router = Router();
 
@@ -23,6 +27,13 @@ const staffAccess = [
     AdminRole.SUPER_ADMIN,
     AdminRole.OPERATIONS,
 ];
+
+// Razorpay payment link creation
+router.post(
+    "/razorpay-link",
+    authorize(AdminRole.SUPER_ADMIN),
+    createRazorpayLinkController
+);
 
 // Create payment record
 router.post(
@@ -64,5 +75,7 @@ router.patch(
     authorize(AdminRole.OPERATIONS),
     reviewPayment,
 );
+
+router.post("/webhook", handleRazorpayWebhook);
 
 export default router;

@@ -1,3 +1,4 @@
+
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
@@ -5,10 +6,25 @@ import { randomUUID } from "crypto";
 import { prisma } from "../../config/database";
 import { AdminRole } from "../../generated/prisma/client";
 
-const JWT_SECRET = process.env.JWT_ACCESS_SECRET!;
+const JWT_SECRET = process.env.JWT_ACCESS_SECRET;
 
-const TOKEN_EXPIRY = "7d";
+const TOKEN_EXPIRY = "15m";
+const COOKIE_MAX_AGE = 15 * 60 * 1000;
 
+if (!JWT_SECRET) {
+    throw new Error("JWT_ACCESS_SECRET is not configured");
+}
+
+
+function getJwtSecret(): string {
+    const secret = process.env.JWT_ACCESS_SECRET;
+
+    if (!secret) {
+        throw new Error("JWT_ACCESS_SECRET is not configured");
+    }
+
+    return secret;
+}
 function generateToken(user: {
     id: string;
     role: AdminRole;
@@ -21,13 +37,15 @@ function generateToken(user: {
             type: "access",
             tokenVersion: user.tokenVersion,
         },
-        JWT_SECRET,
+        getJwtSecret(),
         {
             expiresIn: TOKEN_EXPIRY,
             jwtid: randomUUID(),
         }
     );
 }
+
+
 export async function login(email: string, password: string) {
     const user = await prisma.adminUser.findUnique({
         where: {
@@ -59,5 +77,12 @@ export async function login(email: string, password: string) {
         },
         token,
         expiresIn: TOKEN_EXPIRY,
+        cookieOptions: {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "none" as const,
+            maxAge: COOKIE_MAX_AGE,
+            path: "/",
+        },
     };
 }

@@ -13,20 +13,6 @@ enum AdminRole {
   OPERATIONS
 }
 
-model AdminUser {
-  id           String    @id @default(uuid()) @db.Uuid
-  name         String
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  role         AdminRole @default(SALES)
-  isActive     Boolean   @default(true) @map("is_active")
-  tokenVersion Int       @default(0) @map("token_version")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-
-  @@map("admin_users")
-}
-
 enum PropertyCategory {
   RESIDENTIAL
   COMMERCIAL
@@ -69,6 +55,12 @@ enum DocumentType {
   OTHER
 }
 
+enum DocumentReviewStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 enum PaymentMethod {
   UPI
 }
@@ -79,78 +71,75 @@ enum PaymentStatus {
   VERIFIED
   REJECTED
   REFUNDED
+  LINK_CREATED
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
 }
 
-model Payment {
-  id          String @id @default(uuid()) @db.Uuid
-  quotationId String @map("quotation_id") @db.Uuid
+enum PaymentGateway {
+  MANUAL
+  RAZORPAY
+}
 
-  paymentNumber String @unique @map("payment_number")
+enum CampaignStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  LIVE
+  PAUSED
+  COMPLETED
+}
 
-  amount Decimal       @db.Decimal(12, 2)
-  method PaymentMethod @default(UPI)
-  status PaymentStatus @default(PENDING)
+model AdminUser {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         AdminRole @default(SALES)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  tokenVersion Int       @default(0) @map("token_version")
 
-  paymentLink         String?   @map("payment_link")
-  paymentLinkSharedAt DateTime? @map("payment_link_shared_at")
-  sharedById          String?   @map("shared_by_id") @db.Uuid
-
-  transactionReference String? @map("transaction_reference")
-
-  paymentProofUrl String? @map("payment_proof_url")
-  paymentProofId  String? @map("payment_proof_id")
-
-  paidAt DateTime? @map("paid_at")
-
-  verifiedById    String?   @map("verified_by_id") @db.Uuid
-  verifiedAt      DateTime? @map("verified_at")
-  rejectionReason String?   @map("rejection_reason")
-
-  notes     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  quotation Quotation @relation(fields: [quotationId], references: [id])
-
-  @@index([quotationId])
-  @@index([status])
-  @@map("payments")
+  @@map("admin_users")
 }
 
 model Owner {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String
-  email     String?
-  phone     String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
+  id         String     @id @default(uuid()) @db.Uuid
+  name       String
+  email      String?
+  phone      String     @unique
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
   properties Property[]
 
   @@map("owners")
 }
 
 model Property {
-  id          String           @id @default(uuid()) @db.Uuid
-  ownerId     String           @map("owner_id") @db.Uuid
-  title       String
-  description String?
-  category    PropertyCategory
-  address     String
-  city        String
-  district    String
-  state       String           @default("Kerala")
-  pincode     String?
-  latitude    Float?
-  longitude   Float?
-  price       Decimal          @db.Decimal(15, 2)
-  area        Float
-  areaUnit    String           @default("sqft") @map("area_unit")
-  status      PropertyStatus   @default(SUBMITTED)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
+  id           String                @id @default(uuid()) @db.Uuid
+  ownerId      String                @map("owner_id") @db.Uuid
+  title        String
+  description  String?
+  category     PropertyCategory
+  address      String
+  city         String
+  district     String
+  state        String                @default("Kerala")
+  pincode      String?
+  latitude     Float?
+  longitude    Float?
+  price        Decimal               @db.Decimal(15, 2)
+  area         Float
+  areaUnit     String                @default("sqft") @map("area_unit")
+  status       PropertyStatus        @default(SUBMITTED)
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  deletedAt    DateTime?             @map("deleted_at")
+  isDeleted    Boolean               @default(false) @map("is_deleted")
   owner        Owner                 @relation(fields: [ownerId], references: [id])
   documents    PropertyDocument[]
   verification PropertyVerification?
@@ -162,119 +151,132 @@ model Property {
 }
 
 model PropertyDocument {
-  id         String       @id @default(uuid()) @db.Uuid
-  propertyId String       @map("property_id") @db.Uuid
-  type       DocumentType
-  fileUrl    String       @map("file_url")
-  publicId   String?      @map("public_id")
-  fileName   String       @map("file_name")
-  isVerified Boolean      @default(false) @map("is_verified")
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  id            String               @id @default(uuid()) @db.Uuid
+  propertyId    String               @map("property_id") @db.Uuid
+  type          DocumentType
+  fileUrl       String               @map("file_url")
+  publicId      String               @map("public_id")
+  fileName      String               @map("file_name")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  fileSize      Int?                 @map("file_size")
+  format        String?
+  resourceType  String               @default("raw") @map("resource_type")
+  reviewRemarks String?              @map("review_remarks")
+  reviewStatus  DocumentReviewStatus @default(PENDING) @map("review_status")
+  reviewedAt    DateTime?            @map("reviewed_at")
+  reviewedById  String?              @map("reviewed_by_id") @db.Uuid
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  property      Property             @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
   @@index([propertyId])
+  @@index([reviewStatus])
   @@map("property_documents")
 }
 
 model PropertyVerification {
-  id         String             @id @default(uuid()) @db.Uuid
-  propertyId String             @unique @map("property_id") @db.Uuid
-  status     VerificationStatus @default(PENDING)
-
-  identityVerified   Boolean @default(false) @map("identity_verified")
-  ownershipVerified  Boolean @default(false) @map("ownership_verified")
-  locationVerified   Boolean @default(false) @map("location_verified")
-  photosVerified     Boolean @default(false) @map("photos_verified")
-  siteVisitCompleted Boolean @default(false) @map("site_visit_completed")
-
-  rejectionReason String?   @map("rejection_reason")
-  verifiedById    String?   @map("verified_by_id") @db.Uuid
-  verifiedAt      DateTime? @map("verified_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-
-  history VerificationHistory[]
+  id                 String                @id @default(uuid()) @db.Uuid
+  propertyId         String                @unique @map("property_id") @db.Uuid
+  status             VerificationStatus    @default(PENDING)
+  identityVerified   Boolean               @default(false) @map("identity_verified")
+  ownershipVerified  Boolean               @default(false) @map("ownership_verified")
+  locationVerified   Boolean               @default(false) @map("location_verified")
+  photosVerified     Boolean               @default(false) @map("photos_verified")
+  siteVisitCompleted Boolean               @default(false) @map("site_visit_completed")
+  rejectionReason    String?               @map("rejection_reason")
+  verifiedById       String?               @map("verified_by_id") @db.Uuid
+  verifiedAt         DateTime?             @map("verified_at")
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+  property           Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  history            VerificationHistory[]
 
   @@map("property_verifications")
 }
 
 model VerificationHistory {
-  id             String              @id @default(uuid()) @db.Uuid
-  verificationId String              @map("verification_id") @db.Uuid
-  changedById    String              @map("changed_by_id") @db.Uuid
-  oldStatus      VerificationStatus? @map("old_status")
-  newStatus      VerificationStatus  @map("new_status")
+  id             String               @id @default(uuid()) @db.Uuid
+  verificationId String               @map("verification_id") @db.Uuid
+  changedById    String               @map("changed_by_id") @db.Uuid
+  oldStatus      VerificationStatus?  @map("old_status")
+  newStatus      VerificationStatus   @map("new_status")
   remarks        String?
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  verification PropertyVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  verification   PropertyVerification @relation(fields: [verificationId], references: [id], onDelete: Cascade)
 
   @@index([verificationId])
   @@map("verification_history")
 }
 
 model Quotation {
-  id         String @id @default(uuid()) @db.Uuid
-  propertyId String @map("property_id") @db.Uuid
-
-  quotationNumber String @unique @map("quotation_number")
-  packageName     String @map("package_name")
-
-  serviceFee          Decimal @map("service_fee") @db.Decimal(12, 2)
-  advertisementBudget Decimal @map("advertisement_budget") @db.Decimal(12, 2)
-  additionalCharges   Decimal @default(0) @map("additional_charges") @db.Decimal(12, 2)
-  totalAmount         Decimal @map("total_amount") @db.Decimal(12, 2)
-
-  validUntil DateTime        @map("valid_until")
-  status     QuotationStatus @default(DRAFT)
-
-  notes       String?
-  createdById String   @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  property Property  @relation(fields: [propertyId], references: [id])
-  payments Payment[]
-  campaign Campaign?
+  id                  String          @id @default(uuid()) @db.Uuid
+  propertyId          String          @map("property_id") @db.Uuid
+  quotationNumber     String          @unique @map("quotation_number")
+  packageName         String          @map("package_name")
+  serviceFee          Decimal         @map("service_fee") @db.Decimal(12, 2)
+  advertisementBudget Decimal         @map("advertisement_budget") @db.Decimal(12, 2)
+  additionalCharges   Decimal         @default(0) @map("additional_charges") @db.Decimal(12, 2)
+  totalAmount         Decimal         @map("total_amount") @db.Decimal(12, 2)
+  validUntil          DateTime        @map("valid_until")
+  status              QuotationStatus @default(DRAFT)
+  notes               String?
+  createdById         String          @map("created_by_id") @db.Uuid
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  campaign            Campaign?
+  payments            Payment[]
+  property            Property        @relation(fields: [propertyId], references: [id])
 
   @@index([propertyId])
   @@index([status])
   @@map("quotations")
 }
 
-model PaymentConfiguration {
-  id String @id @default(uuid()) @db.Uuid
+model Payment {
+  id                   String        @id @default(uuid()) @db.Uuid
+  quotationId          String        @map("quotation_id") @db.Uuid
+  paymentNumber        String        @unique @map("payment_number")
+  amount               Decimal       @db.Decimal(12, 2)
+  method               PaymentMethod @default(UPI)
+  status               PaymentStatus @default(PENDING)
+  transactionReference String?       @map("transaction_reference")
+  paymentProofUrl      String?       @map("payment_proof_url")
+  paymentProofId       String?       @map("payment_proof_id")
+  paidAt               DateTime?     @map("paid_at")
+  verifiedById         String?       @map("verified_by_id") @db.Uuid
+  verifiedAt           DateTime?     @map("verified_at")
+  rejectionReason      String?       @map("rejection_reason")
+  notes                String?
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+  paymentLink          String?       @map("payment_link")
+  paymentLinkSharedAt  DateTime?     @map("payment_link_shared_at")
+  sharedById           String?       @map("shared_by_id") @db.Uuid
+  quotation            Quotation     @relation(fields: [quotationId], references: [id])
 
-  upiId     String  @map("upi_id")
-  upiName   String  @map("upi_name")
-  upiLink   String? @map("upi_link")
-  qrCodeUrl String? @map("qr_code_url")
-  qrCodeId  String? @map("qr_code_id")
+  gateway               PaymentGateway @default(RAZORPAY)
+  razorpayPaymentLinkId String?        @unique @map("razorpay_payment_link_id")
+  razorpayPaymentId     String?        @unique @map("razorpay_payment_id")
+  razorpayPaymentStatus String?        @map("razorpay_payment_status")
+  paymentLinkExpiresAt  DateTime?      @map("payment_link_expires_at")
 
-  isActive Boolean @default(true) @map("is_active")
-
-  createdById String @map("created_by_id") @db.Uuid
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("payment_configurations")
+  @@index([quotationId])
+  @@index([status])
+  @@map("payments")
 }
 
-enum CampaignStatus {
-  DRAFT
-  PENDING_APPROVAL
-  APPROVED
-  REJECTED
-  LIVE
-  PAUSED
-  COMPLETED
+model PaymentConfiguration {
+  id          String   @id @default(uuid()) @db.Uuid
+  upiId       String   @map("upi_id")
+  upiName     String   @map("upi_name")
+  upiLink     String?  @map("upi_link")
+  qrCodeUrl   String?  @map("qr_code_url")
+  qrCodeId    String?  @map("qr_code_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("payment_configurations")
 }
 
 model Campaign {
@@ -289,22 +291,29 @@ model Campaign {
   status          CampaignStatus @default(DRAFT)
   notes           String?
   rejectionReason String?        @map("rejection_reason")
-
-  createdById  String    @map("created_by_id") @db.Uuid
-  submittedAt  DateTime? @map("submitted_at")
-  approvedById String?   @map("approved_by_id") @db.Uuid
-  approvedAt   DateTime? @map("approved_at")
-  launchedById String?   @map("launched_by_id") @db.Uuid
-  launchedAt   DateTime? @map("launched_at")
-
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  rejectedById String?   @map("rejected_by_id") @db.Uuid
-  rejectedAt   DateTime? @map("rejected_at")
-
-  quotation Quotation @relation(fields: [quotationId], references: [id])
+  createdById     String         @map("created_by_id") @db.Uuid
+  submittedAt     DateTime?      @map("submitted_at")
+  approvedById    String?        @map("approved_by_id") @db.Uuid
+  approvedAt      DateTime?      @map("approved_at")
+  launchedById    String?        @map("launched_by_id") @db.Uuid
+  launchedAt      DateTime?      @map("launched_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+  rejectedAt      DateTime?      @map("rejected_at")
+  rejectedById    String?        @map("rejected_by_id") @db.Uuid
+  quotation       Quotation      @relation(fields: [quotationId], references: [id])
 
   @@index([status])
   @@index([createdAt])
   @@map("campaigns")
+}
+
+model PaymentWebhookEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @unique @map("event_id")
+  eventType   String   @map("event_type")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@index([eventType])
+  @@map("payment_webhook_events")
 }
